@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import type { Termin, Player, AttendanceStore } from "../lib/store";
-import { loadTermine, loadPlayers, loadAttendance, saveAttendance } from "../lib/store";
+import type { AttendanceStore, Player, Termin } from "../lib/store";
+import { loadAttendance, loadPlayers, loadTermine, saveAttendance } from "../lib/store";
 
 function formatDateDE(iso: string) {
   const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -12,7 +12,7 @@ function formatDateDE(iso: string) {
   return `${m[3]}.${m[2]}.${m[1]}`;
 }
 
-export default function CheckInClient() {
+function Inner() {
   const params = useSearchParams();
   const terminFromUrl = params.get("termin") || "";
 
@@ -45,6 +45,7 @@ export default function CheckInClient() {
   }, [players, termin]);
 
   const perTermin = termin ? (attStore[termin.id] ?? {}) : {};
+  const presentCount = teamPlayers.filter((p) => perTermin[p.id] === true).length;
 
   function setAtt(playerId: string, value: boolean) {
     if (!termin) return;
@@ -76,6 +77,7 @@ export default function CheckInClient() {
     maxWidth: 900,
     marginTop: 16,
   };
+
   const btn: React.CSSProperties = {
     border: "2px solid #111",
     borderRadius: 999,
@@ -83,7 +85,9 @@ export default function CheckInClient() {
     fontWeight: 900,
     background: "#fff",
     color: "#111",
+    cursor: "pointer",
   };
+
   const row: React.CSSProperties = {
     border: "2px solid #111",
     borderRadius: 16,
@@ -91,12 +95,11 @@ export default function CheckInClient() {
     background: "#fff",
   };
 
-  const presentCount = teamPlayers.filter((p) => perTermin[p.id] === true).length;
-
   return (
     <main style={{ padding: 24 }}>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <h1 style={{ fontSize: 44, margin: 0 }}>Check in</h1>
+
         <Link
           href="/termine"
           style={{
@@ -162,5 +165,13 @@ export default function CheckInClient() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function CheckInClient() {
+  return (
+    <Suspense fallback={<main style={{ padding: 24 }}>Lade Check-in…</main>}>
+      <Inner />
+    </Suspense>
   );
 }
