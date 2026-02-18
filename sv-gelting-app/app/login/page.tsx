@@ -20,69 +20,59 @@ export default function LoginPage() {
     setError("");
     if (!user) return setError("Bitte Nutzer wählen.");
     const ok = saveUser(user);
-    if (!ok) {
-      setError("Login fehlgeschlagen: Browser-Speicher blockiert. Bitte Private Browsing aus.");
-      return;
-    }
+    if (!ok) return setError("Login fehlgeschlagen: Safari speichert nichts (evtl. privater Tab).");
     router.replace("/");
   }
 
+  const page: React.CSSProperties = { padding: 24 };
   const card: React.CSSProperties = {
-    border: "2px solid #111",
-    borderRadius: 18,
-    padding: 18,
-    background: "#fff",
     maxWidth: 520,
     margin: "24px auto",
+    border: "2px solid #111",
+    borderRadius: 22,
+    padding: 18,
+    background: "#fff",
   };
-  const btn: React.CSSProperties = {
+  const pill: React.CSSProperties = {
     border: "2px solid #111",
     borderRadius: 999,
     padding: "10px 14px",
     fontWeight: 900,
+    background: "#fff",
+    color: "#111",
+    width: "100%",
+  };
+  const btn: React.CSSProperties = {
+    border: "2px solid #111",
+    borderRadius: 999,
+    padding: "12px 14px",
+    fontWeight: 950,
     background: "#111",
     color: "#fff",
     width: "100%",
   };
-  const select: React.CSSProperties = {
-    border: "2px solid #111",
-    borderRadius: 12,
-    padding: 12,
-    width: "100%",
-    fontSize: 16,
-    background: "#fff",
-  };
 
   return (
-    <main style={{ padding: 24 }}>
+    <main style={page}>
       <div style={card}>
         <h1 style={{ margin: 0, fontSize: 34 }}>Login</h1>
-        <div style={{ marginTop: 8, opacity: 0.75 }}>Wolfgang & Volker nutzen dieselbe Datenbank.</div>
+        <div style={{ marginTop: 8, opacity: 0.75 }}>
+          Wolfgang & Volker arbeiten auf derselben Datenbank.
+        </div>
 
         <div style={{ marginTop: 16 }}>
-          <label style={{ fontWeight: 900 }}>Nutzer</label>
-          <div style={{ marginTop: 8 }}>
-            <select value={userId} onChange={(e) => setUserId(e.target.value)} style={select}>
-              {USERS.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div style={{ fontWeight: 900, marginBottom: 8 }}>Nutzer</div>
+          <select value={userId} onChange={(e) => setUserId(e.target.value)} style={pill}>
+            {USERS.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         {error ? (
-          <div
-            style={{
-              marginTop: 12,
-              border: "2px solid #111",
-              borderRadius: 12,
-              padding: 10,
-              background: "#fff",
-              fontWeight: 800,
-            }}
-          >
+          <div style={{ marginTop: 12, border: "2px solid #111", borderRadius: 14, padding: 12, fontWeight: 900 }}>
             {error}
           </div>
         ) : null}
@@ -94,7 +84,7 @@ export default function LoginPage() {
         </div>
 
         <div style={{ marginTop: 12, fontSize: 13, opacity: 0.75 }}>
-          Tipp iPad: Safari **nicht im privaten Tab** verwenden.
+          iPad Tipp: Safari nicht im privaten Modus verwenden.
         </div>
       </div>
     </main>

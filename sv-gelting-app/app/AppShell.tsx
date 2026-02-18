@@ -5,24 +5,38 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearUser, loadUser, type User } from "./lib/auth";
 
+const NAV = [
+  { href: "/", label: "Dashboard" },
+  { href: "/termine", label: "Termine" },
+  { href: "/teams", label: "Teams" },
+  { href: "/check-in", label: "Check-in" },
+  { href: "/bewertung", label: "Bewertung" },
+  { href: "/stats", label: "Stats" },
+  { href: "/export", label: "Export" },
+  { href: "/aufstellung", label: "Aufstellung" },
+];
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const isLogin = pathname === "/login";
 
   const [user, setUser] = useState<User | null>(null);
-  const [ready, setReady] = useState(false);
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     const u = loadUser();
     setUser(u);
-    setReady(true);
+    setChecked(true);
+
+    // Nur schützen, wenn wir wirklich geprüft haben UND nicht auf /login sind
     if (!u && !isLogin) router.replace("/login");
   }, [isLogin, router]);
 
-  const greeting = useMemo(() => (user ? `Hallo ${user.name} 👋` : ""), [user]);
+  const greeting = useMemo(() => (user ? `Hallo ${user.name}` : ""), [user]);
 
-  const top: React.CSSProperties = {
+  const shell: React.CSSProperties = { minHeight: "100vh", background: "#fff", color: "#111" };
+  const header: React.CSSProperties = {
     position: "sticky",
     top: 0,
     zIndex: 50,
@@ -30,7 +44,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     borderBottom: "2px solid #111",
   };
   const wrap: React.CSSProperties = { maxWidth: 1100, margin: "0 auto", padding: "12px 16px" };
-  const pill: React.CSSProperties = {
+  const row: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" };
+
+  const pillBase: React.CSSProperties = {
     border: "2px solid #111",
     borderRadius: 999,
     padding: "8px 12px",
@@ -38,41 +54,73 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     textDecoration: "none",
     color: "#111",
     background: "#fff",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
   };
 
-  if (!ready && !isLogin) return <main style={{ padding: 24 }}>Lade…</main>;
-  if (!user && !isLogin) return <main style={{ padding: 24 }}>Weiterleitung zum Login…</main>;
+  // Während wir noch prüfen, nichts “kaputt” rendern
+  if (!checked && !isLogin) {
+    return (
+      <div style={shell}>
+        <main style={{ padding: 24 }}>Lade…</main>
+      </div>
+    );
+  }
+
+  // Wenn kein User und nicht login: kurz “weiterleiten” anzeigen (verhindert Client-Crash)
+  if (!user && !isLogin) {
+    return (
+      <div style={shell}>
+        <main style={{ padding: 24 }}>Weiterleitung zum Login…</main>
+      </div>
+    );
+  }
 
   return (
-    <>
-      <header style={top}>
+    <div style={shell}>
+      <header style={header}>
         <div style={wrap}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <Link href="/" style={{ ...pill, background: "#111", color: "#fff" }}>
+          <div style={row}>
+            <Link href="/" style={{ ...pillBase, background: "#111", color: "#fff" }}>
               SV Gelting
             </Link>
 
             {!isLogin ? (
               <>
-                <Link href="/termine" style={pill}>Termine</Link>
-                <Link href="/teams" style={pill}>Teams</Link>
-                <Link href="/check-in" style={pill}>Check-in</Link>
-                <Link href="/bewertung" style={pill}>Bewertung</Link>
-                <Link href="/stats" style={pill}>Stats</Link>
-                <Link href="/export" style={pill}>Export</Link>
-                <Link href="/aufstellung" style={pill}>Aufstellung</Link>
+                {NAV.map((n) => {
+                  const active = pathname === n.href;
+                  return (
+                    <Link
+                      key={n.href}
+                      href={n.href}
+                      style={{
+                        ...pillBase,
+                        background: active ? "#111" : "#fff",
+                        color: active ? "#fff" : "#111",
+                      }}
+                    >
+                      {n.label}
+                    </Link>
+                  );
+                })}
               </>
             ) : null}
 
             <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
-              {user ? <div style={{ fontWeight: 900, opacity: 0.85 }}>{greeting}</div> : null}
+              {user ? (
+                <span style={{ fontWeight: 900, opacity: 0.9, padding: "6px 10px", borderRadius: 999, border: "2px solid #111" }}>
+                  {greeting}
+                </span>
+              ) : null}
+
               {user && !isLogin ? (
                 <button
                   onClick={() => {
                     clearUser();
                     router.replace("/login");
                   }}
-                  style={{ ...pill, cursor: "pointer" }}
+                  style={{ ...pillBase, cursor: "pointer" }}
                 >
                   Logout
                 </button>
@@ -82,7 +130,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {children}
-    </>
+      <div style={{ maxWidth: 1100, margin: "0 auto" }}>{children}</div>
+    </div>
   );
 }
