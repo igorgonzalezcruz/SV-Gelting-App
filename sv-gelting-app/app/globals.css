@@ -1,0 +1,95 @@
+:root {
+  --bg: #ffffff;
+  --fg: #000000;
+  --border: #000000;
+  --muted: #444;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  padding: 0;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+  border-bottom: 2px solid var(--border);
+}
+
+.headerInner {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.brand {
+  font-weight: 900;
+  text-decoration: none;
+  color: var(--fg);
+}
+
+.nav {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.navBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--fg);
+  font-weight: 800;
+  text-decoration: none;
+  line-height: 1;
+  min-height: 40px;
+}
+
+.main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px 14px 48px;
+}
+
+.card {
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  padding: 14px;
+  background: #fff;
+}
+
+.h1 {
+  font-size: 34px;
+  font-weight: 950;
+  margin: 0 0 12px;
+}
+
+.p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 700px) {
+  .grid2 { grid-template-columns: 1fr 1fr; }
+}

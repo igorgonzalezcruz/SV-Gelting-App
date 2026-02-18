@@ -1,1 +1,0 @@
-{\n  "name": "sv-gelting-app",\n  "private": true,\n  "scripts": {\n    "dev": "next dev"\n  }\n}
