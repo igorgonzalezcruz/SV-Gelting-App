@@ -1,71 +1,112 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+
+type User = { id: string; name: string };
+
+const STORAGE_KEY = "svgelting.user";
+
+function safeGetUser(): User | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.id || !parsed?.name) return null;
+    return { id: String(parsed.id), name: String(parsed.name) };
+  } catch {
+    return null;
+  }
+}
+
+function safeLogout() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {}
+}
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const isLogin = pathname === "/login";
 
   useEffect(() => {
-    const raw = localStorage.getItem("sv_user");
-    if (!raw && pathname !== "/login") {
-      window.location.href = "/login";
-      return;
-    }
-    if (raw) setUser(JSON.parse(raw));
-  }, [pathname]);
+    // Client only
+    const u = safeGetUser();
+    setUser(u);
+    if (!u && !isLogin) router.replace("/login");
+  }, [isLogin, router]);
 
-  function logout() {
-    localStorage.removeItem("sv_user");
-    window.location.href = "/login";
-  }
+  const greeting = useMemo(() => {
+    if (!user) return "";
+    return `Hallo ${user.name} 👋`;
+  }, [user]);
 
-  const btn: React.CSSProperties = {
+  const top: React.CSSProperties = {
+    position: "sticky",
+    top: 0,
+    zIndex: 50,
+    background: "#fff",
+    borderBottom: "2px solid #111",
+  };
+  const wrap: React.CSSProperties = { maxWidth: 1100, margin: "0 auto", padding: "12px 16px" };
+  const pill: React.CSSProperties = {
     border: "2px solid #111",
     borderRadius: 999,
     padding: "8px 12px",
+    fontWeight: 900,
     textDecoration: "none",
     color: "#111",
-    fontWeight: 900,
     background: "#fff",
   };
 
-  if (pathname === "/login") {
-    return <>{children}</>;
+  if (!user && !isLogin) {
+    // Verhindert „client-side exception“, falls irgendwas ohne User lädt
+    return <main style={{ padding: 24 }}>Lade…</main>;
   }
 
   return (
-    <div>
-      <header
-        style={{
-          borderBottom: "2px solid #111",
-          padding: 12,
-          display: "flex",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 10,
-        }}
-      >
-        <div style={{ fontWeight: 900 }}>
-          Hallo {user?.name || ""}
-        </div>
+    <>
+      <header style={top}>
+        <div style={wrap}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <Link href="/" style={{ ...pill, background: "#111", color: "#fff" }}>
+              SV Gelting
+            </Link>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link href="/" style={btn}>Dashboard</Link>
-          <Link href="/termine" style={btn}>Termine</Link>
-          <Link href="/check-in" style={btn}>Check in</Link>
-          <Link href="/bewertung" style={btn}>Bewertung</Link>
-          <Link href="/teams" style={btn}>Teams</Link>
-          <Link href="/stats" style={btn}>Stats</Link>
-          <Link href="/aufstellung" style={btn}>Aufstellung</Link>
-          <Link href="/export" style={btn}>Export</Link>
-          <button onClick={logout} style={btn}>Logout</button>
+            {!isLogin ? (
+              <>
+                <Link href="/termine" style={pill}>Termine</Link>
+                <Link href="/teams" style={pill}>Teams</Link>
+                <Link href="/check-in" style={pill}>Check-in</Link>
+                <Link href="/bewertung" style={pill}>Bewertung</Link>
+                <Link href="/stats" style={pill}>Stats</Link>
+                <Link href="/export" style={pill}>Export</Link>
+                <Link href="/aufstellung" style={pill}>Aufstellung</Link>
+              </>
+            ) : null}
+
+            <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
+              {user ? <div style={{ fontWeight: 900, opacity: 0.85 }}>{greeting}</div> : null}
+              {user && !isLogin ? (
+                <button
+                  onClick={() => {
+                    safeLogout();
+                    router.replace("/login");
+                  }}
+                  style={{ ...pill, cursor: "pointer" }}
+                >
+                  Logout
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
       </header>
 
-      <main style={{ padding: 16 }}>{children}</main>
-    </div>
+      {children}
+    </>
   );
 }
