@@ -87,14 +87,25 @@ export const KEYS = {
 };
 
 // ---------------- Helpers ----------------
+// ✅ WICHTIG: "null" (String) -> JSON.parse("null") = null -> darf NIE zurückkommen
 function safeParse<T>(s: string | null, fallback: T): T {
   try {
     if (!s) return fallback;
-    return JSON.parse(s) as T;
+    const v = JSON.parse(s) as any;
+    if (v === null || v === undefined) return fallback;
+    return v as T;
   } catch {
     return fallback;
   }
 }
+
+function ensureArray<T>(v: any, fallback: T[] = []): T[] {
+  return Array.isArray(v) ? (v as T[]) : fallback;
+}
+function ensureObject<T extends Record<string, any>>(v: any, fallback: T): T {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as T) : fallback;
+}
+
 export function loadJSON<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   return safeParse<T>(localStorage.getItem(key), fallback);
@@ -161,7 +172,8 @@ export function saveSeason(season: string) {
 export const SEED_TERMINE: Termin[] = [];
 
 export function loadTermine(): Termin[] {
-  const v = loadJSON<Termin[]>(KEYS.termine, SEED_TERMINE);
+  const raw = loadJSON<any>(KEYS.termine, SEED_TERMINE);
+  const v = ensureArray<Termin>(raw, SEED_TERMINE);
   const season = loadSeason();
   return v.map((t) => ({ ...t, saison: (t as any).saison ?? season }));
 }
@@ -177,42 +189,48 @@ export function createTermin(partial: Omit<Termin, "id">) {
 }
 
 export function loadPlayers(): Player[] {
-  return loadJSON<Player[]>(KEYS.players, []);
+  const raw = loadJSON<any>(KEYS.players, []);
+  return ensureArray<Player>(raw, []);
 }
 export function savePlayers(v: Player[]) {
   saveJSON(KEYS.players, v);
 }
 
 export function loadAttendance(): AttendanceStore {
-  return loadJSON<AttendanceStore>(KEYS.attendance, {});
+  const raw = loadJSON<any>(KEYS.attendance, {});
+  return ensureObject<AttendanceStore>(raw, {});
 }
 export function saveAttendance(v: AttendanceStore) {
   saveJSON(KEYS.attendance, v);
 }
 
 export function loadRatings(): RatingsStore {
-  return loadJSON<RatingsStore>(KEYS.ratings, {});
+  const raw = loadJSON<any>(KEYS.ratings, {});
+  return ensureObject<RatingsStore>(raw, {});
 }
 export function saveRatings(v: RatingsStore) {
   saveJSON(KEYS.ratings, v);
 }
 
 export function loadTests(): TestsStore {
-  return loadJSON<TestsStore>(KEYS.tests, {});
+  const raw = loadJSON<any>(KEYS.tests, {});
+  return ensureObject<TestsStore>(raw, {});
 }
 export function saveTests(v: TestsStore) {
   saveJSON(KEYS.tests, v);
 }
 
 export function loadMatchStats(): MatchStatsStore {
-  return loadJSON<MatchStatsStore>(KEYS.matchStats, {});
+  const raw = loadJSON<any>(KEYS.matchStats, {});
+  return ensureObject<MatchStatsStore>(raw, {});
 }
 export function saveMatchStats(v: MatchStatsStore) {
   saveJSON(KEYS.matchStats, v);
 }
 
 export function loadLineup(): LineupStore {
-  return loadJSON<LineupStore>(KEYS.lineup, {});
+  const raw = loadJSON<any>(KEYS.lineup, {});
+  return ensureObject<LineupStore>(raw, {});
 }
 export function saveLineup(v: LineupStore) {
   saveJSON(KEYS.lineup, v);
@@ -245,19 +263,34 @@ export function deleteTerminCascade(terminId: string) {
   saveTermine(loadTermine().filter((t) => t.id !== terminId));
 
   const att = loadAttendance();
-  if (att[terminId]) { delete att[terminId]; saveAttendance(att); }
+  if (att[terminId]) {
+    delete att[terminId];
+    saveAttendance(att);
+  }
 
   const rat = loadRatings();
-  if (rat[terminId]) { delete rat[terminId]; saveRatings(rat); }
+  if (rat[terminId]) {
+    delete rat[terminId];
+    saveRatings(rat);
+  }
 
   const ms = loadMatchStats();
-  if (ms[terminId]) { delete ms[terminId]; saveMatchStats(ms); }
+  if (ms[terminId]) {
+    delete ms[terminId];
+    saveMatchStats(ms);
+  }
 
   const lu = loadLineup();
-  if (lu[terminId]) { delete lu[terminId]; saveLineup(lu); }
+  if (lu[terminId]) {
+    delete lu[terminId];
+    saveLineup(lu);
+  }
 
   const legacy = loadJSON<Record<string, any>>(KEYS.checkinLegacy, {});
-  if (legacy[terminId]) { delete legacy[terminId]; saveJSON(KEYS.checkinLegacy, legacy); }
+  if (legacy[terminId]) {
+    delete legacy[terminId];
+    saveJSON(KEYS.checkinLegacy, legacy);
+  }
 }
 
 export function cleanupOrphans(options?: { cleanMissingPlayers?: boolean }) {
@@ -272,28 +305,40 @@ export function cleanupOrphans(options?: { cleanMissingPlayers?: boolean }) {
 
   for (const key of terminStores) {
     const obj = loadJSON<Record<string, any>>(key, {});
+    const o = ensureObject<Record<string, any>>(obj, {});
     let changed = false;
 
-    for (const terminId of Object.keys(obj)) {
-      if (!validTerminIds.has(terminId)) { delete obj[terminId]; changed = true; continue; }
+    for (const terminId of Object.keys(o)) {
+      if (!validTerminIds.has(terminId)) {
+        delete o[terminId];
+        changed = true;
+        continue;
+      }
       if (key === KEYS.lineup) continue;
 
-      if (cleanMissingPlayers && obj[terminId] && typeof obj[terminId] === "object") {
-        for (const playerId of Object.keys(obj[terminId])) {
-          if (!validPlayerIds.has(playerId)) { delete obj[terminId][playerId]; changed = true; }
+      if (cleanMissingPlayers && o[terminId] && typeof o[terminId] === "object") {
+        for (const playerId of Object.keys(o[terminId])) {
+          if (!validPlayerIds.has(playerId)) {
+            delete o[terminId][playerId];
+            changed = true;
+          }
         }
       }
     }
-    if (changed) saveJSON(key, obj);
+    if (changed) saveJSON(key, o);
   }
 
   if (cleanMissingPlayers) {
     const t = loadTests();
+    const tt = ensureObject<TestsStore>(t, {});
     let changed = false;
-    for (const playerId of Object.keys(t)) {
-      if (!validPlayerIds.has(playerId)) { delete t[playerId]; changed = true; }
+    for (const playerId of Object.keys(tt)) {
+      if (!validPlayerIds.has(playerId)) {
+        delete tt[playerId];
+        changed = true;
+      }
     }
-    if (changed) saveTests(t);
+    if (changed) saveTests(tt);
   }
 }
 
@@ -315,7 +360,8 @@ export function makeSnapshot(season: string): BackupSnapshot {
   };
 }
 export function loadBackups(): BackupSnapshot[] {
-  return loadJSON<BackupSnapshot[]>(KEYS.backups, []);
+  const raw = loadJSON<any>(KEYS.backups, []);
+  return ensureArray<BackupSnapshot>(raw, []);
 }
 export function saveBackups(v: BackupSnapshot[]) {
   saveJSON(KEYS.backups, v);
@@ -371,12 +417,26 @@ const SYNC_KEYS = [
 
 function collectLocalState(): Record<string, any> {
   const out: Record<string, any> = {};
-  for (const k of SYNC_KEYS) out[k] = safeParse(localStorage.getItem(k), null);
+  for (const k of SYNC_KEYS) {
+    // ✅ wenn im localStorage "null" steht, wird daraus undefined -> wird NICHT gesendet
+    const v = safeParse<any>(localStorage.getItem(k), undefined as any);
+    if (v === undefined || v === null) continue;
+    out[k] = v;
+  }
   return out;
 }
+
 function applyRemoteState(remote: Record<string, any>) {
+  // ✅ niemals "null" ins localStorage schreiben
   for (const k of SYNC_KEYS) {
-    if (k in remote) localStorage.setItem(k, JSON.stringify(remote[k]));
+    if (!(k in remote)) continue;
+
+    const v = remote[k];
+    if (v === null || v === undefined) {
+      localStorage.removeItem(k);
+      continue;
+    }
+    localStorage.setItem(k, JSON.stringify(v));
   }
 }
 
@@ -392,8 +452,7 @@ async function safeJson(r: Response) {
 
 async function remoteGet(): Promise<RemoteState> {
   // cache busting
-  const url =
-    `${GOOGLE_SYNC_URL}?op=get&token=${encodeURIComponent(GOOGLE_SYNC_TOKEN)}&t=${Date.now()}`;
+  const url = `${GOOGLE_SYNC_URL}?op=get&token=${encodeURIComponent(GOOGLE_SYNC_TOKEN)}&t=${Date.now()}`;
 
   const r = await fetch(url, {
     method: "GET",
@@ -407,8 +466,7 @@ async function remoteGet(): Promise<RemoteState> {
 }
 
 async function remoteSet(data: Record<string, any>, baseUpdatedAtISO: string | null): Promise<RemoteState> {
-  const url =
-    `${GOOGLE_SYNC_URL}?token=${encodeURIComponent(GOOGLE_SYNC_TOKEN)}&t=${Date.now()}`;
+  const url = `${GOOGLE_SYNC_URL}?token=${encodeURIComponent(GOOGLE_SYNC_TOKEN)}&t=${Date.now()}`;
 
   const payload = {
     op: "set",
@@ -439,21 +497,21 @@ function mergeByIdArray<T extends { id: string }>(remoteArr: T[] | null, localAr
   return Array.from(map.values());
 }
 function mergeRecord(remoteObj: any, localObj: any) {
-  const r = (remoteObj && typeof remoteObj === "object") ? remoteObj : {};
-  const l = (localObj && typeof localObj === "object") ? localObj : {};
+  const r = remoteObj && typeof remoteObj === "object" ? remoteObj : {};
+  const l = localObj && typeof localObj === "object" ? localObj : {};
   return { ...r, ...l };
 }
 function mergeTwoLevel(remoteObj: any, localObj: any) {
   const out: any = {};
-  const r = (remoteObj && typeof remoteObj === "object") ? remoteObj : {};
-  const l = (localObj && typeof localObj === "object") ? localObj : {};
+  const r = remoteObj && typeof remoteObj === "object" ? remoteObj : {};
+  const l = localObj && typeof localObj === "object" ? localObj : {};
   const keys = new Set([...Object.keys(r), ...Object.keys(l)]);
   for (const k of keys) out[k] = mergeRecord(r[k], l[k]);
   return out;
 }
 function mergeTests(remoteObj: any, localObj: any) {
-  const r = (remoteObj && typeof remoteObj === "object") ? remoteObj : {};
-  const l = (localObj && typeof localObj === "object") ? localObj : {};
+  const r = remoteObj && typeof remoteObj === "object" ? remoteObj : {};
+  const l = localObj && typeof localObj === "object" ? localObj : {};
   const out: any = {};
   const pids = new Set([...Object.keys(r), ...Object.keys(l)]);
 
@@ -492,7 +550,7 @@ function mergeState(remote: Record<string, any>, local: Record<string, any>, dir
       out[k] = mergeTests(rv, lv);
       continue;
     }
-    out[k] = (lv !== undefined && lv !== null) ? lv : rv;
+    out[k] = lv !== undefined && lv !== null ? lv : rv;
   }
   return out;
 }
@@ -532,7 +590,9 @@ export async function syncPullOnce() {
 function scheduleSyncPush() {
   if (typeof window === "undefined") return;
   if (pushTimer) clearTimeout(pushTimer);
-  pushTimer = setTimeout(() => { syncPushNow(false).catch(() => null); }, 900);
+  pushTimer = setTimeout(() => {
+    syncPushNow(false).catch(() => null);
+  }, 900);
 }
 
 /** Push: local(dirty) -> remote, konflikt-sicher + merge + retry */
