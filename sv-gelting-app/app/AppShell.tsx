@@ -3,46 +3,24 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-
-type User = { id: string; name: string };
-
-const STORAGE_KEY = "svgelting.user";
-
-function safeGetUser(): User | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed?.id || !parsed?.name) return null;
-    return { id: String(parsed.id), name: String(parsed.name) };
-  } catch {
-    return null;
-  }
-}
-
-function safeLogout() {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {}
-}
+import { clearUser, loadUser, type User } from "./lib/auth";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<User | null>(null);
   const isLogin = pathname === "/login";
 
+  const [user, setUser] = useState<User | null>(null);
+  const [ready, setReady] = useState(false);
+
   useEffect(() => {
-    // Client only
-    const u = safeGetUser();
+    const u = loadUser();
     setUser(u);
+    setReady(true);
     if (!u && !isLogin) router.replace("/login");
   }, [isLogin, router]);
 
-  const greeting = useMemo(() => {
-    if (!user) return "";
-    return `Hallo ${user.name} 👋`;
-  }, [user]);
+  const greeting = useMemo(() => (user ? `Hallo ${user.name} 👋` : ""), [user]);
 
   const top: React.CSSProperties = {
     position: "sticky",
@@ -62,10 +40,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     background: "#fff",
   };
 
-  if (!user && !isLogin) {
-    // Verhindert „client-side exception“, falls irgendwas ohne User lädt
-    return <main style={{ padding: 24 }}>Lade…</main>;
-  }
+  if (!ready && !isLogin) return <main style={{ padding: 24 }}>Lade…</main>;
+  if (!user && !isLogin) return <main style={{ padding: 24 }}>Weiterleitung zum Login…</main>;
 
   return (
     <>
@@ -93,7 +69,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               {user && !isLogin ? (
                 <button
                   onClick={() => {
-                    safeLogout();
+                    clearUser();
                     router.replace("/login");
                   }}
                   style={{ ...pill, cursor: "pointer" }}
