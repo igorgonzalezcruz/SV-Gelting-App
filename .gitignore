@@ -1,4 +1,26 @@
+cd /workspaces/SV-Gelting-App
+
+cat > .gitignore <<'EOF'
+# dependencies
 node_modules
-node_modules
+**/node_modules
+
+# next
 .next
-node_modules
+**/.next
+out
+**/out
+
+# vercel
+.vercel
+**/.vercel
+
+# turbo
+.turbo
+**/.turbo
+
+# logs
+*.log
+
+# env
+.env*
