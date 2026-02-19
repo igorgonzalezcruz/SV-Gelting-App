@@ -35,3 +35,10 @@ pnpm-debug.log*
 .turbo/
 
 
+
+# build artifacts
+**/node_modules/
+**/.next/
+**/out/
+**/.vercel/
+**/.turbo/
