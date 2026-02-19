@@ -2,64 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type {
-  Team,
-  Termin,
-  Player,
-  AttendanceStore,
-  RatingsStore,
-  Ratings,
-  TestsStore,
-  TestEntry,
-  TestType,
-} from "./lib/store";
-import {
-  loadTermine,
-  loadPlayers,
-  loadAttendance,
-  loadRatings,
-  loadTests,
-  classifyTest,
-  kindStyle,
-} from "./lib/store";
+import type { AttendanceStore, MatchStatsStore, Player, RatingsStore, Termin, TestsStore } from "./lib/store";
+import { loadAttendance, loadMatchStats, loadPlayers, loadRatings, loadTermine, loadTests } from "./lib/store";
+import { buildInsights, getCooperSeriesNewestFirst, getPlayerRatingSeriesNewestFirst, isPast, isUpcoming } from "./lib/insights";
+import { BarMini, SparkLine } from "./components/Charts";
 
 function formatDateDE(iso: string) {
   const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return iso;
   return `${m[3]}.${m[2]}.${m[1]}`;
-}
-
-function avgRating(r: Ratings) {
-  return (r.spielintelligenz + r.kondition + r.technisch + r.verstaendnis) / 4;
-}
-
-function isUpcoming(t: Termin) {
-  const ts = new Date(`${t.datum}T${t.uhrzeit}:00`).getTime();
-  return ts >= Date.now();
-}
-function isPast(t: Termin) {
-  const ts = new Date(`${t.datum}T${t.uhrzeit}:00`).getTime();
-  return ts < Date.now();
-}
-
-type Trend = { delta: number; label: string; kind: "better" | "worse" | "stable" };
-
-function trendForNotes(seriesNewestFirst: number[]) {
-  if (seriesNewestFirst.length < 6) return null;
-  const last3 = seriesNewestFirst.slice(0, 3);
-  const prev = seriesNewestFirst.slice(3);
-  const a = last3.reduce((x, y) => x + y, 0) / last3.length;
-  const b = prev.reduce((x, y) => x + y, 0) / prev.length;
-  const delta = a - b;
-
-  if (delta < -0.05) return { delta, label: "⬇ besser", kind: "better" } as Trend;
-  if (delta > 0.05) return { delta, label: "⬆ schlechter", kind: "worse" } as Trend;
-  return { delta, label: "→ stabil", kind: "stable" } as Trend;
-}
-
-function fmtPct(x: number | null) {
-  if (x === null) return "—";
-  return `${Math.round(x * 100)}%`;
 }
 
 export default function DashboardPage() {
@@ -68,499 +19,220 @@ export default function DashboardPage() {
   const [att, setAtt] = useState<AttendanceStore>({});
   const [ratings, setRatings] = useState<RatingsStore>({});
   const [tests, setTests] = useState<TestsStore>({});
+  const [matchStats, setMatchStats] = useState<MatchStatsStore>({});
 
   useEffect(() => {
-    setTermine(loadTermine());
-    setPlayers(loadPlayers());
-    setAtt(loadAttendance());
-    setRatings(loadRatings());
-    setTests(loadTests());
+    setTermine(loadTermine() ?? []);
+    setPlayers(loadPlayers() ?? []);
+    setAtt(loadAttendance() ?? {});
+    setRatings(loadRatings() ?? {});
+    setTests(loadTests() ?? {});
+    setMatchStats(loadMatchStats() ?? {});
   }, []);
 
-  // Dashboard nur 1. Mannschaft
-  const teams: Team[] = ["1. Mannschaft"];
+  // Dashboard: nur 1. Mannschaft (wie du wolltest)
+  const team = "1. Mannschaft" as const;
 
-  const byTeam = useMemo(() => {
-    const res: Record<
-      Team,
-      { trainings: Termin[]; spiele: Termin[]; termine: Termin[]; players: Player[] }
-    > = {
-      "1. Mannschaft": { trainings: [], spiele: [], termine: [], players: [] },
-      "2. Mannschaft": { trainings: [], spiele: [], termine: [], players: [] },
-    };
+  const teamPlayers = useMemo(() => players.filter((p) => p.team === team), [players]);
+  const teamTermine = useMemo(() => termine.filter((t) => t.team === team), [termine]);
 
-    for (const t of termine) {
-      res[t.team].termine.push(t);
-      if (t.typ === "Training") res[t.team].trainings.push(t);
-      else res[t.team].spiele.push(t);
-    }
-    for (const p of players) res[p.team].players.push(p);
+  const upcoming = useMemo(
+    () => teamTermine.filter(isUpcoming).sort((a, b) => (a.datum + a.uhrzeit).localeCompare(b.datum + b.uhrzeit)).slice(0, 6),
+    [teamTermine]
+  );
 
-    for (const team of (["1. Mannschaft", "2. Mannschaft"] as Team[])) {
-      res[team].termine.sort((a, b) =>
-        `${a.datum}T${a.uhrzeit}`.localeCompare(`${b.datum}T${b.uhrzeit}`)
-      );
-      res[team].trainings.sort((a, b) =>
-        `${a.datum}T${a.uhrzeit}`.localeCompare(`${b.datum}T${b.uhrzeit}`)
-      );
-      res[team].spiele.sort((a, b) =>
-        `${a.datum}T${a.uhrzeit}`.localeCompare(`${b.datum}T${b.uhrzeit}`)
-      );
-      res[team].players.sort(
-        (a, b) =>
-          (parseInt(a.number || "9999", 10) - parseInt(b.number || "9999", 10)) ||
-          a.name.localeCompare(b.name)
-      );
-    }
-    return res;
-  }, [termine, players]);
+  const pastNewestFirst = useMemo(
+    () => teamTermine.filter(isPast).sort((a, b) => (b.datum + b.uhrzeit).localeCompare(a.datum + a.uhrzeit)),
+    [teamTermine]
+  );
 
-  function trainingParticipation(team: Team, playerId: string) {
-    const trainings = byTeam[team].trainings.filter(isPast);
-    if (!trainings.length) return null;
+  const insights = useMemo(
+    () =>
+      buildInsights({
+        team,
+        termine,
+        players,
+        attendance: att,
+        ratings,
+        tests,
+        matchStats,
+      }),
+    [team, termine, players, att, ratings, tests, matchStats]
+  );
 
-    let present = 0;
-    let counted = 0;
-
-    for (const t of trainings) {
-      const v = att[t.id]?.[playerId];
-      if (typeof v === "boolean") {
-        counted += 1;
-        if (v === true) present += 1;
-      }
-    }
-    if (!counted) return null;
-    return present / counted;
-  }
-
-  function teamAvgParticipation(team: Team) {
-    const plist = byTeam[team].players;
-    const vals: number[] = [];
-    for (const p of plist) {
-      const v = trainingParticipation(team, p.id);
-      if (v !== null) vals.push(v);
-    }
-    if (!vals.length) return null;
-    return vals.reduce((a, b) => a + b, 0) / vals.length;
-  }
-
-  function avgByTyp(team: Team, typ: "Training" | "Spiel") {
-    const list =
-      typ === "Training" ? byTeam[team].trainings.filter(isPast) : byTeam[team].spiele.filter(isPast);
-
-    let sum = 0;
-    let n = 0;
-
-    for (const t of list) {
-      const per = ratings[t.id];
-      if (!per) continue;
-      for (const p of byTeam[team].players) {
-        const r = per[p.id];
-        if (r) {
-          sum += avgRating(r);
-          n += 1;
+  // Ranking: Trainingsbeteiligung + Note (Training/Spiel) + Fitness
+  const ranking = useMemo(() => {
+    // attendance rate
+    const past = pastNewestFirst;
+    function rate(pid: string) {
+      let present = 0;
+      let counted = 0;
+      for (const t of past) {
+        const per = att[t.id];
+        if (!per) continue;
+        const v = per[pid];
+        if (v === true) {
+          present += 1;
+          counted += 1;
+        } else if (v === false) {
+          counted += 1;
         }
       }
-    }
-    return n ? sum / n : null;
-  }
-
-  function seriesPlayerAvgNotes(team: Team, playerId: string, typ: "Training" | "Spiel") {
-    const list = (typ === "Training" ? byTeam[team].trainings : byTeam[team].spiele)
-      .filter(isPast)
-      .slice()
-      .sort((a, b) => `${b.datum}T${b.uhrzeit}`.localeCompare(`${a.datum}T${a.uhrzeit}`));
-
-    const vals: number[] = [];
-    for (const t of list) {
-      const r = ratings[t.id]?.[playerId];
-      if (r) vals.push(avgRating(r));
-    }
-    return vals; // newest first
-  }
-
-  function nextTermin(team: Team) {
-    const upcoming = byTeam[team].termine
-      .filter(isUpcoming)
-      .slice()
-      .sort((a, b) => `${a.datum}T${a.uhrzeit}`.localeCompare(`${b.datum}T${b.uhrzeit}`));
-    return upcoming[0] ?? null;
-  }
-
-  function playerTestEntries(playerId: string, test: TestType) {
-    return (tests[playerId] ?? [])
-      .filter((e) => e.test === test)
-      .slice()
-      .sort((a, b) => `${b.dateISO}`.localeCompare(`${a.dateISO}`));
-  }
-
-  function teamTestSnapshot(team: Team, test: TestType) {
-    const plist = byTeam[team].players;
-    const lastVals: Array<{ p: Player; last: TestEntry; prev?: TestEntry }> = [];
-
-    for (const p of plist) {
-      const e = playerTestEntries(p.id, test);
-      if (e.length >= 1) lastVals.push({ p, last: e[0], prev: e[1] });
+      if (!counted) return null;
+      return present / counted;
     }
 
-    lastVals.sort((a, b) => (b.last.value ?? 0) - (a.last.value ?? 0));
-    const improved = lastVals.filter((x) => x.prev && x.last.value > x.prev.value).length;
-    const worse = lastVals.filter((x) => x.prev && x.last.value < x.prev.value).length;
-    const stable = lastVals.filter((x) => x.prev && x.last.value === x.prev.value).length;
+    return teamPlayers
+      .map((p) => {
+        const r = rate(p.id);
+        const tr = getPlayerRatingSeriesNewestFirst(p.id, pastNewestFirst, ratings, "Training");
+        const sr = getPlayerRatingSeriesNewestFirst(p.id, pastNewestFirst, ratings, "Spiel");
+        const cooper = getCooperSeriesNewestFirst(p.id, tests, "cooper");
+        const shuttle = getCooperSeriesNewestFirst(p.id, tests, "shuttle");
+        return {
+          p,
+          att: r,
+          trainNote: tr[0] ?? null,
+          spielNote: sr[0] ?? null,
+          cooper: cooper[0] ?? null,
+          shuttle: shuttle[0] ?? null,
+          trainSeries: tr,
+          spielSeries: sr,
+        };
+      })
+      .sort((a, b) => (b.att ?? -1) - (a.att ?? -1))
+      .slice(0, 8);
+  }, [teamPlayers, pastNewestFirst, att, ratings, tests]);
 
-    return { lastVals, improved, worse, stable, participants: lastVals.length, total: plist.length };
-  }
-
-  const ai = useMemo(() => {
-    const out: Array<{
-      title: string;
-      items: Array<{ headline: string; detail: string; level: "info" | "warn" | "good" }>;
-    }> = [];
-
-    for (const team of teams) {
-      const plist = byTeam[team].players;
-      const trainingsPast = byTeam[team].trainings.filter(isPast);
-      const spielePast = byTeam[team].spiele.filter(isPast);
-
-      const teamAvg = teamAvgParticipation(team);
-
-      const under =
-        teamAvg === null
-          ? []
-          : plist
-              .map((p) => ({ p, v: trainingParticipation(team, p.id) }))
-              .filter((x) => x.v !== null && x.v < teamAvg)
-              .sort((a, b) => (a.v ?? 0) - (b.v ?? 0))
-              .slice(0, 6);
-
-      const trendPlayers = plist
-        .map((p) => {
-          const series = seriesPlayerAvgNotes(team, p.id, "Training");
-          const tr = trendForNotes(series);
-          return tr ? { p, tr } : null;
-        })
-        .filter(Boolean) as Array<{ p: Player; tr: Trend }>;
-
-      const improving = trendPlayers
-        .filter((x) => x.tr.kind === "better")
-        .sort((a, b) => a.tr.delta - b.tr.delta)
-        .slice(0, 4);
-
-      const worsening = trendPlayers
-        .filter((x) => x.tr.kind === "worse")
-        .sort((a, b) => b.tr.delta - a.tr.delta)
-        .slice(0, 4);
-
-      const cooper = teamTestSnapshot(team, "cooper");
-      const shuttle = teamTestSnapshot(team, "shuttle");
-      const next = nextTermin(team);
-
-      const items: Array<{ headline: string; detail: string; level: "info" | "warn" | "good" }> = [];
-
-      items.push({
-        headline: "Datenstatus",
-        detail: `Vergangene Trainings: ${trainingsPast.length}, Spiele: ${spielePast.length}, Spieler: ${plist.length}`,
-        level: "info",
-      });
-
-      if (next) {
-        items.push({
-          headline: "Nächster Termin",
-          detail: `${next.typ} • ${next.titel} • ${formatDateDE(next.datum)} ${next.uhrzeit}${next.ort ? ` • ${next.ort}` : ""}`,
-          level: "info",
-        });
-      }
-
-      if (teamAvg === null) {
-        items.push({
-          headline: "Trainingsbeteiligung",
-          detail: "Noch keine erfassten Anwesenheiten (Check-in).",
-          level: "warn",
-        });
-      } else {
-        items.push({
-          headline: "Trainingsbeteiligung",
-          detail: `Team-Ø: ${Math.round(teamAvg * 100)}% • Unter Ø: ${under.length}`,
-          level: under.length >= Math.max(2, Math.round(plist.length * 0.25)) ? "warn" : "info",
-        });
-
-        for (const x of under.slice(0, 3)) {
-          items.push({
-            headline: "Unter Team-Ø",
-            detail: `${x.p.number ? `#${x.p.number} ` : ""}${x.p.name} • ${Math.round((x.v ?? 0) * 100)}%`,
-            level: "warn",
-          });
-        }
-      }
-
-      if (improving.length) {
-        items.push({
-          headline: "Form (Training) – positiv",
-          detail: improving.map((x) => `${x.p.number ? `#${x.p.number} ` : ""}${x.p.name} (${x.tr.label})`).join(" • "),
-          level: "good",
-        });
-      }
-      if (worsening.length) {
-        items.push({
-          headline: "Form (Training) – negativ",
-          detail: worsening.map((x) => `${x.p.number ? `#${x.p.number} ` : ""}${x.p.name} (${x.tr.label})`).join(" • "),
-          level: "warn",
-        });
-      }
-
-      items.push({
-        headline: "Cooper",
-        detail: `Teilnehmer: ${cooper.participants}/${cooper.total} • ⬆ ${cooper.improved} ⬇ ${cooper.worse} → ${cooper.stable}`,
-        level: cooper.participants === 0 ? "warn" : "info",
-      });
-      items.push({
-        headline: "Shuttle Run",
-        detail: `Teilnehmer: ${shuttle.participants}/${shuttle.total} • ⬆ ${shuttle.improved} ⬇ ${shuttle.worse} → ${shuttle.stable}`,
-        level: shuttle.participants === 0 ? "warn" : "info",
-      });
-
-      out.push({ title: `🤖 Trainer Analyse – ${team}`, items });
-    }
-
-    return out;
-  }, [teams, byTeam, att, ratings, tests]);
-
-  // ✅ Dashboard Tiles inkl. Aufstellung + Export
-  const tiles = [
-    { href: "/termine", title: "Termine", hint: "Planen, importieren, löschen" },
-    { href: "/check-in", title: "Check in", hint: "Anwesenheit pro Termin" },
-    { href: "/bewertung", title: "Bewertung", hint: "Spieler → Termin → Noten" },
-    { href: "/teams", title: "Teams", hint: "Spieler verwalten" },
-    { href: "/stats", title: "Stats", hint: "Profile, Trends, Tests" },
-    { href: "/aufstellung", title: "Aufstellung", hint: "Startelf/Bank pro Spiel" },
-    { href: "/export", title: "Export", hint: "Backups + Excel/CSV" },
-  ];
-
-  const styles = {
-    title: { fontSize: 40, margin: 0, fontWeight: 950 } as React.CSSProperties,
-    sub: { marginTop: 8, opacity: 0.85 } as React.CSSProperties,
-    shadow: { boxShadow: "0 10px 30px rgba(0,0,0,0.06)" } as React.CSSProperties,
-
-    grid: {
-      display: "grid",
-      gap: 12,
-      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-      marginTop: 18,
-    } as React.CSSProperties,
-
-    tile: {
-      border: "2px solid #111",
-      borderRadius: 22,
-      background: "#fff",
-      padding: 16,
-      textDecoration: "none",
-      color: "#111",
-      display: "block",
-      minHeight: 112,
-      transition: "transform 120ms ease, box-shadow 120ms ease",
-    } as React.CSSProperties,
-
-    tileTitle: { fontSize: 18, fontWeight: 950 } as React.CSSProperties,
-    tileHint: { marginTop: 6, opacity: 0.85, fontSize: 14 } as React.CSSProperties,
-    big: { fontSize: 28, fontWeight: 950, marginTop: 10 } as React.CSSProperties,
-
-    section: {
-      border: "2px solid #111",
-      borderRadius: 22,
-      background: "#fff",
-      padding: 16,
-      marginTop: 14,
-    } as React.CSSProperties,
-
-    pill: {
-      display: "inline-block",
-      border: "2px solid #111",
-      borderRadius: 999,
-      padding: "6px 10px",
-      fontWeight: 900,
-      background: "#fff",
-    } as React.CSSProperties,
-
-    row: {
-      border: "2px solid #111",
-      borderRadius: 18,
-      padding: 12,
-      background: "#fff",
-    } as React.CSSProperties,
-
-    mono: { fontVariantNumeric: "tabular-nums" as const },
-
-    aiItem: (_level: "info" | "warn" | "good") =>
-      ({
-        border: "2px solid #111",
-        borderRadius: 16,
-        padding: 12,
-        background: "#fff",
-      } as React.CSSProperties),
-
-    aiBadge: (_level: "info" | "warn" | "good") =>
-      ({
-        display: "inline-block",
-        border: "2px solid #111",
-        borderRadius: 999,
-        padding: "4px 10px",
-        fontWeight: 950,
-        background: "#fff",
-        marginLeft: 8,
-      } as React.CSSProperties),
+  const shell: React.CSSProperties = { padding: 18, maxWidth: 1100, margin: "0 auto" };
+  const h1: React.CSSProperties = { fontSize: 44, margin: "8px 0 14px", fontWeight: 950, letterSpacing: -1 };
+  const grid: React.CSSProperties = { display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" };
+  const card: React.CSSProperties = { border: "2px solid #111", borderRadius: 18, padding: 14, background: "#fff" };
+  const pill: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    border: "2px solid #111",
+    borderRadius: 999,
+    padding: "8px 12px",
+    fontWeight: 900,
+    textDecoration: "none",
+    color: "#111",
+    background: "#fff",
   };
 
-  const css = `
-    @media (max-width: 420px) {
-      .dashGrid { grid-template-columns: 1fr !important; }
-    }
-    a.tile:hover { box-shadow: 0 14px 36px rgba(0,0,0,0.09); }
-    a.tile:active { transform: scale(0.99); }
-  `;
+  function badge(level: "good" | "warn" | "info") {
+    if (level === "good") return { border: "2px solid #111", borderRadius: 999, padding: "4px 10px", fontWeight: 950, background: "#111", color: "#fff" };
+    if (level === "warn") return { border: "2px solid #111", borderRadius: 999, padding: "4px 10px", fontWeight: 950, background: "#fff", color: "#111" };
+    return { border: "2px solid #111", borderRadius: 999, padding: "4px 10px", fontWeight: 950, background: "#fff", color: "#111", opacity: 0.85 };
+  }
 
   return (
-    <main>
-      <style>{css}</style>
-
-      <div style={{ paddingTop: 6 }}>
-        <h1 style={styles.title}>SV Gelting</h1>
-        <div style={styles.sub}>Dashboard • Startscreen • iPhone-optimiert</div>
-
-        <div className="dashGrid" style={styles.grid}>
-          {tiles.map((t) => (
-            <Link key={t.href} href={t.href} style={{ ...styles.tile, ...styles.shadow }} className="tile">
-              <div style={styles.tileTitle}>{t.title}</div>
-              <div style={styles.tileHint}>{t.hint}</div>
-              <div style={styles.big}>→</div>
-            </Link>
-          ))}
-
-          <div style={{ ...styles.tile, ...styles.shadow }}>
-            <div style={styles.tileTitle}>Nächster Termin</div>
-            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-              {teams.map((team) => {
-                const n = byTeam[team].termine.filter(isUpcoming).sort((a, b) => `${a.datum}T${a.uhrzeit}`.localeCompare(`${b.datum}T${b.uhrzeit}`))[0] ?? null;
-                return (
-                  <div key={team} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                    <div style={{ fontWeight: 900 }}>{team}</div>
-                    <div style={{ opacity: 0.9, ...styles.mono }}>
-                      {n ? `${formatDateDE(n.datum)} ${n.uhrzeit}` : "—"}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ marginTop: 10, opacity: 0.85, fontSize: 13 }}>
-              (Dashboard zeigt nur 1. Mannschaft)
-            </div>
-          </div>
+    <main style={shell}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ opacity: 0.7, fontWeight: 900 }}>{team}</div>
+          <h1 style={h1}>Dashboard</h1>
         </div>
 
-        {teams.map((team) => {
-          const teamPlayers = byTeam[team].players.length;
-          const next = byTeam[team].termine.filter(isUpcoming).sort((a, b) => `${a.datum}T${a.uhrzeit}`.localeCompare(`${b.datum}T${b.uhrzeit}`))[0] ?? null;
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href="/termine" style={pill}>Termine</Link>
+          <Link href="/teams" style={pill}>Teams</Link>
+          <Link href="/check-in" style={pill}>Check-in</Link>
+          <Link href="/bewertung" style={pill}>Bewertung</Link>
+          <Link href="/stats" style={pill}>Stats</Link>
+          <Link href="/aufstellung" style={pill}>Aufstellung</Link>
+          <Link href="/export" style={pill}>Export</Link>
+        </div>
+      </div>
 
-          const avgPart = teamAvgParticipation(team);
-          const avgTraining = avgByTyp(team, "Training");
-          const avgSpiel = avgByTyp(team, "Spiel");
-
-          const plist = byTeam[team].players;
-
-          const cooperLast = plist
-            .map((p) => {
-              const e = playerTestEntries(p.id, "cooper");
-              if (!e.length) return null;
-              return { p, last: e[0].value };
-            })
-            .filter(Boolean) as Array<{ p: Player; last: number }>;
-          cooperLast.sort((a, b) => b.last - a.last);
-
-          const name = (p: Player) => `${p.number ? `#${p.number} ` : ""}${p.name}`;
-
-          return (
-            <section key={team} style={{ ...styles.section, ...styles.shadow }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                <div style={{ fontWeight: 950, fontSize: 20 }}>{team}</div>
-                <div style={{ opacity: 0.85 }}>
-                  Spieler: <b>{teamPlayers}</b>
+      <div style={grid}>
+        <section style={card}>
+          <div style={{ fontWeight: 950, fontSize: 18 }}>Trainer-Analyse</div>
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {insights.length ? (
+              insights.map((x, idx) => (
+                <div key={idx} style={{ border: "2px solid #111", borderRadius: 16, padding: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <span style={badge(x.level)}>{x.level === "good" ? "TOP" : x.level === "warn" ? "ACHTUNG" : "INFO"}</span>
+                    <div style={{ fontWeight: 950 }}>{x.title}</div>
+                  </div>
+                  <div style={{ marginTop: 6, opacity: 0.85 }}>{x.detail}</div>
                 </div>
-              </div>
+              ))
+            ) : (
+              <div style={{ opacity: 0.75 }}>Noch keine Daten für Analyse.</div>
+            )}
+          </div>
+        </section>
 
-              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                <div style={{ ...styles.row, ...styles.shadow }}>
-                  <div style={{ fontWeight: 950 }}>Nächster Termin</div>
-                  <div style={{ marginTop: 6, opacity: 0.9 }}>
-                    {next ? (
-                      <>
-                        <b>{next.typ}</b> • {next.titel} •{" "}
-                        <span style={styles.mono}>
-                          {formatDateDE(next.datum)} {next.uhrzeit}
-                        </span>{" "}
-                        • {next.ort || "—"}
-                      </>
-                    ) : (
-                      <span style={{ opacity: 0.85 }}>Kein zukünftiger Termin.</span>
-                    )}
+        <section style={card}>
+          <div style={{ fontWeight: 950, fontSize: 18 }}>Nächste Termine</div>
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {upcoming.length ? (
+              upcoming.map((t) => (
+                <div key={t.id} style={{ border: "2px solid #111", borderRadius: 16, padding: 10 }}>
+                  <div style={{ fontWeight: 950 }}>{t.typ}: {t.titel}</div>
+                  <div style={{ opacity: 0.85, marginTop: 4 }}>
+                    {formatDateDE(t.datum)} • {t.uhrzeit} • {t.ort || "—"}
+                  </div>
+                  <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <Link href={`/check-in?termin=${encodeURIComponent(t.id)}`} style={pill}>Check-in</Link>
+                    <Link href="/termine" style={pill}>Öffnen</Link>
                   </div>
                 </div>
+              ))
+            ) : (
+              <div style={{ opacity: 0.75 }}>Keine kommenden Termine.</div>
+            )}
+          </div>
+        </section>
 
-                <div style={{ ...styles.row, ...styles.shadow }}>
-                  <div style={{ fontWeight: 950 }}>Teamwerte</div>
-                  <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <span style={styles.pill}>
-                      Ø Trainingsbeteiligung: <span style={styles.mono}>{fmtPct(avgPart)}</span>
-                    </span>
-                    <span style={styles.pill}>
-                      Ø Note Training: <span style={styles.mono}>{avgTraining === null ? "—" : avgTraining.toFixed(2)}</span>
-                    </span>
-                    <span style={styles.pill}>
-                      Ø Note Spiel: <span style={styles.mono}>{avgSpiel === null ? "—" : avgSpiel.toFixed(2)}</span>
-                    </span>
+        <section style={card}>
+          <div style={{ fontWeight: 950, fontSize: 18 }}>Ranking (Team)</div>
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {ranking.map((x) => (
+              <div key={x.p.id} style={{ border: "2px solid #111", borderRadius: 16, padding: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ fontWeight: 950 }}>
+                    {x.p.number ? `#${x.p.number} ` : ""}{x.p.name}
+                    <span style={{ opacity: 0.7 }}> • {x.p.position}</span>
                   </div>
+                  <Link href={`/stats/${encodeURIComponent(x.p.id)}`} style={pill}>Profil</Link>
                 </div>
 
-                <div style={{ ...styles.row, ...styles.shadow }}>
-                  <div style={{ fontWeight: 950, fontSize: 18 }}>Cooper Best (letzter)</div>
-                  {cooperLast.length === 0 ? (
-                    <div style={{ marginTop: 8, opacity: 0.85 }}>—</div>
-                  ) : (
-                    <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
-                      {cooperLast.slice(0, 5).map((x, idx) => {
-                        const c = classifyTest("cooper", x.last);
-                        return (
-                          <div key={x.p.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                            <div style={{ fontWeight: 900 }}>{idx + 1}. {name(x.p)}</div>
-                            <span style={{ border: "2px solid", borderRadius: 999, padding: "2px 8px", fontWeight: 950, ...kindStyle(c.kind) }}>
-                              {x.last} • {c.label}
-                            </span>
-                          </div>
-                        );
-                      })}
+                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 900, opacity: 0.85, marginBottom: 6 }}>Trainingsbeteiligung</div>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <BarMini value={Math.round((x.att ?? 0) * 100)} max={100} />
+                      <div style={{ fontWeight: 950 }}>{x.att === null ? "—" : `${Math.round((x.att ?? 0) * 100)}%`}</div>
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                <div style={{ ...styles.row, ...styles.shadow }}>
-                  <div style={{ fontWeight: 950, fontSize: 18 }}>🤖 Trainer Analyse</div>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontWeight: 900, opacity: 0.85, marginBottom: 6 }}>Training-Noten</div>
+                      <SparkLine values={x.trainSeries} invert />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 900, opacity: 0.85, marginBottom: 6 }}>Spiel-Noten</div>
+                      <SparkLine values={x.spielSeries} invert />
+                    </div>
+                  </div>
 
-                  <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                    {ai.find((x) => x.title.includes(team))!.items.map((it, idx) => (
-                      <div key={idx} style={styles.aiItem(it.level)}>
-                        <div style={{ fontWeight: 950 }}>
-                          {it.headline}
-                          <span style={styles.aiBadge(it.level)}>
-                            {it.level === "good" ? "GOOD" : it.level === "warn" ? "WARN" : "INFO"}
-                          </span>
-                        </div>
-                        <div style={{ marginTop: 6, opacity: 0.9 }}>{it.detail}</div>
-                      </div>
-                    ))}
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 900 }}>Cooper: <span style={{ fontWeight: 950 }}>{x.cooper ?? "—"}</span></div>
+                    <div style={{ fontWeight: 900 }}>Shuttle: <span style={{ fontWeight: 950 }}>{x.shuttle ?? "—"}</span></div>
                   </div>
                 </div>
               </div>
-            </section>
-          );
-        })}
+            ))}
+          </div>
+          <div style={{ marginTop: 10, opacity: 0.7, fontWeight: 900 }}>
+            Tipp: Ranking basiert auf Check-ins + Noten + Tests.
+          </div>
+        </section>
       </div>
     </main>
   );
