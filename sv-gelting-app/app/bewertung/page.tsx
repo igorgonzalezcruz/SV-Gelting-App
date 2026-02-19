@@ -39,9 +39,9 @@ export default function BewertungPage() {
   const [selectedTerminId, setSelectedTerminId] = useState<string>("");
 
   useEffect(() => {
-    setSeason(loadSeason());
-    setTermine(loadTermine());
-    setPlayers(loadPlayers());
+    setSeason(loadSeason());          // kann leer sein → dann NICHT filtern
+    setTermine(loadTermine());        // smart-repair
+    setPlayers(loadPlayers());        // smart-repair
     setAtt(loadAttendance());
     setRatings(loadRatings());
     setMatchStats(loadMatchStats());
@@ -54,8 +54,9 @@ export default function BewertungPage() {
 
   const playerTermine = useMemo(() => {
     if (!player) return [];
+
     return [...termine]
-      .filter((t) => t.saison === season)
+      .filter((t) => (!season ? true : t.saison === season)) // ✅ pragmatisch
       .filter((t) => t.team === player.team)
       .filter(isPast)
       .sort((a, b) => `${b.datum}T${b.uhrzeit}`.localeCompare(`${a.datum}T${a.uhrzeit}`));
@@ -114,7 +115,11 @@ export default function BewertungPage() {
 
   function copyLastRating() {
     if (!termin || !player) return;
-    const list = playerTermine.filter((t) => t.typ === termin.typ).slice().sort((a, b) => `${b.datum}T${b.uhrzeit}`.localeCompare(`${a.datum}T${a.uhrzeit}`));
+    const list = playerTermine
+      .filter((t) => t.typ === termin.typ)
+      .slice()
+      .sort((a, b) => `${b.datum}T${b.uhrzeit}`.localeCompare(`${a.datum}T${a.uhrzeit}`));
+
     for (const t of list) {
       if (t.id === termin.id) continue;
       const r = ratings[t.id]?.[player.id];
@@ -158,9 +163,30 @@ export default function BewertungPage() {
     });
   }
 
-  const card: React.CSSProperties = { border: "2px solid #111", borderRadius: 18, padding: 18, background: "#fff", maxWidth: 900, marginTop: 16, boxShadow: "0 10px 30px rgba(0,0,0,0.06)" };
-  const input: React.CSSProperties = { border: "2px solid #111", borderRadius: 12, padding: "10px 12px", fontSize: 16, background: "#fff", width: "100%" };
-  const btn: React.CSSProperties = { border: "2px solid #111", borderRadius: 999, padding: "10px 14px", fontWeight: 900, background: "#fff" };
+  const card: React.CSSProperties = {
+    border: "2px solid #111",
+    borderRadius: 18,
+    padding: 18,
+    background: "#fff",
+    maxWidth: 900,
+    marginTop: 16,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+  };
+  const input: React.CSSProperties = {
+    border: "2px solid #111",
+    borderRadius: 12,
+    padding: "10px 12px",
+    fontSize: 16,
+    background: "#fff",
+    width: "100%",
+  };
+  const btn: React.CSSProperties = {
+    border: "2px solid #111",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontWeight: 900,
+    background: "#fff",
+  };
 
   const avgText = currentRating ? avg(currentRating).toFixed(2) : "—";
 
@@ -168,41 +194,58 @@ export default function BewertungPage() {
     <main style={{ padding: 24 }}>
       <h1 style={{ fontSize: 44, margin: 0 }}>Bewertung</h1>
       <p style={{ marginTop: 10, opacity: 0.9 }}>
-        Saison: <b>{season}</b> • Spieler → Termin → Bewertung • Spiel: Minuten/Tore/Vorlagen
+        Saison: <b>{season || "— (keine Saison gesetzt)"}</b> • Spieler → Termin → Bewertung • Spiel: Minuten/Tore/Vorlagen
       </p>
 
       <div style={card}>
         <div style={{ fontWeight: 950, marginBottom: 8 }}>Spieler auswählen</div>
-        <select
-          value={selectedPlayerId}
-          onChange={(e) => {
-            setSelectedPlayerId(e.target.value);
-            setSelectedTerminId("");
-          }}
-          style={input}
-        >
-          {players
-            .slice()
-            .sort(
-              (a, b) =>
-                a.team.localeCompare(b.team) ||
-                (parseInt(a.number || "9999", 10) - parseInt(b.number || "9999", 10)) ||
-                a.name.localeCompare(b.name)
-            )
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.team} • {p.number ? `#${p.number} ` : ""}{p.name}
-              </option>
-            ))}
-        </select>
+
+        {players.length === 0 ? (
+          <div style={{ opacity: 0.85 }}>
+            <b>Keine Spieler gefunden.</b>
+            <div>Wenn du vorher Spieler hattest: sie werden gleich “smart” aus localStorage repariert.</div>
+            <div style={{ marginTop: 6 }}>Lade Seite neu (Hard Reload) oder lege 1 Spieler an.</div>
+          </div>
+        ) : (
+          <select
+            value={selectedPlayerId}
+            onChange={(e) => {
+              setSelectedPlayerId(e.target.value);
+              setSelectedTerminId("");
+            }}
+            style={input}
+          >
+            {players
+              .slice()
+              .sort(
+                (a, b) =>
+                  a.team.localeCompare(b.team) ||
+                  (parseInt(a.number || "9999", 10) - parseInt(b.number || "9999", 10)) ||
+                  a.name.localeCompare(b.name)
+              )
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.team} • {p.number ? `#${p.number} ` : ""}{p.name}
+                </option>
+              ))}
+          </select>
+        )}
       </div>
 
       <div style={card}>
-        <div style={{ fontWeight: 950, marginBottom: 8 }}>Termin auswählen (nur vergangene des Teams & Saison)</div>
+        <div style={{ fontWeight: 950, marginBottom: 8 }}>
+          Termin auswählen (nur vergangene des Teams{season ? " & Saison" : ""})
+        </div>
+
         {!player ? (
           <div style={{ opacity: 0.85 }}>Bitte zuerst einen Spieler auswählen.</div>
         ) : playerTermine.length === 0 ? (
-          <div style={{ opacity: 0.85 }}>Keine vergangenen Termine in dieser Saison.</div>
+          <div style={{ opacity: 0.85 }}>
+            Keine vergangenen Termine für Team <b>{player.team}</b>{season ? <> in Saison <b>{season}</b></> : null}.
+            <div style={{ marginTop: 6, opacity: 0.75 }}>
+              Tipp: Wenn Saison leer ist, setze eine Saison – oder Terminen fehlt das Feld <code>saison</code>.
+            </div>
+          </div>
         ) : (
           <select value={selectedTerminId} onChange={(e) => setSelectedTerminId(e.target.value)} style={input}>
             {playerTermine.map((t) => (
@@ -236,7 +279,13 @@ export default function BewertungPage() {
                   inputMode="numeric"
                   value={currentMatch?.minutes ?? ""}
                   placeholder="z.B. 90"
-                  onChange={(e) => setMinutesGoalsAssists(Number(e.target.value || 0), currentMatch?.goals ?? 0, currentMatch?.assists ?? 0)}
+                  onChange={(e) =>
+                    setMinutesGoalsAssists(
+                      Number(e.target.value || 0),
+                      currentMatch?.goals ?? 0,
+                      currentMatch?.assists ?? 0
+                    )
+                  }
                 />
               </div>
               <div>
@@ -246,7 +295,9 @@ export default function BewertungPage() {
                   inputMode="numeric"
                   value={currentMatch?.goals ?? ""}
                   placeholder="z.B. 1"
-                  onChange={(e) => setMinutesGoalsAssists(currentMatch?.minutes ?? 0, Number(e.target.value || 0), currentMatch?.assists ?? 0)}
+                  onChange={(e) =>
+                    setMinutesGoalsAssists(currentMatch?.minutes ?? 0, Number(e.target.value || 0), currentMatch?.assists ?? 0)
+                  }
                 />
               </div>
               <div>
@@ -256,7 +307,9 @@ export default function BewertungPage() {
                   inputMode="numeric"
                   value={currentMatch?.assists ?? ""}
                   placeholder="z.B. 1"
-                  onChange={(e) => setMinutesGoalsAssists(currentMatch?.minutes ?? 0, currentMatch?.goals ?? 0, Number(e.target.value || 0))}
+                  onChange={(e) =>
+                    setMinutesGoalsAssists(currentMatch?.minutes ?? 0, currentMatch?.goals ?? 0, Number(e.target.value || 0))
+                  }
                 />
               </div>
             </div>
