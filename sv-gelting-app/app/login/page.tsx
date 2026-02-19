@@ -13,16 +13,22 @@ export default function LoginPage() {
   const [err, setErr] = useState("");
 
   function login() {
-    const found = USERS.find(
-      (x) => x.username.toLowerCase() === u.toLowerCase() && x.password === p
-    );
+    const user = u.trim().toLowerCase();
+    const pass = p;
+
+    const found = USERS.find((x) => x.username === user && x.password === pass);
 
     if (!found) {
       setErr("Falscher Login");
       return;
     }
 
-    localStorage.setItem("sv_user", JSON.stringify(found));
+    // ✅ EINHEITLICH: wir speichern ab jetzt nur den Anzeigenamen als String
+    localStorage.setItem("svgelting_user", found.name);
+
+    // ✅ Altlasten entfernen
+    localStorage.removeItem("sv_user");
+
     window.location.href = "/";
   }
 
@@ -32,18 +38,41 @@ export default function LoginPage() {
     padding: 20,
     maxWidth: 420,
     margin: "60px auto",
+    background: "#fff",
+  };
+
+  const input: React.CSSProperties = {
+    width: "100%",
+    marginTop: 10,
+    border: "2px solid #111",
+    borderRadius: 14,
+    padding: 12,
+    fontSize: 16,
+  };
+
+  const btn: React.CSSProperties = {
+    marginTop: 14,
+    border: "2px solid #111",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontWeight: 900,
+    background: "#111",
+    color: "#fff",
+    width: "100%",
   };
 
   return (
     <main style={{ padding: 24 }}>
       <div style={box}>
-        <h1>Trainer Login</h1>
+        <h1 style={{ marginTop: 0 }}>Trainer Login</h1>
 
         <input
-          placeholder="Benutzer"
+          placeholder="Benutzer (wolfgang / volker)"
           value={u}
           onChange={(e) => setU(e.target.value)}
-          style={{ width: "100%", marginTop: 10 }}
+          style={input}
+          autoCapitalize="none"
+          autoCorrect="off"
         />
 
         <input
@@ -51,14 +80,14 @@ export default function LoginPage() {
           placeholder="Passwort"
           value={p}
           onChange={(e) => setP(e.target.value)}
-          style={{ width: "100%", marginTop: 10 }}
+          style={input}
         />
 
-        <button onClick={login} style={{ marginTop: 14 }}>
+        <button onClick={login} style={btn}>
           Login
         </button>
 
-        {err && <div style={{ marginTop: 10 }}>{err}</div>}
+        {err && <div style={{ marginTop: 10, fontWeight: 900 }}>{err}</div>}
       </div>
     </main>
   );
