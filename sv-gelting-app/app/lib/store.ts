@@ -90,11 +90,15 @@ export const KEYS = {
 function safeParse<T>(s: string | null, fallback: T): T {
   try {
     if (!s) return fallback;
-    return JSON.parse(s) as T;
+    const parsed = JSON.parse(s) as T;
+    // ✅ WICHTIG: falls "null" gespeichert ist, nie null zurückgeben
+    if (parsed === null || parsed === undefined) return fallback;
+    return parsed;
   } catch {
     return fallback;
   }
 }
+
 export function loadJSON<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   return safeParse<T>(localStorage.getItem(key), fallback);
@@ -163,10 +167,11 @@ export const SEED_TERMINE: Termin[] = [];
 export function loadTermine(): Termin[] {
   const v = loadJSON<Termin[]>(KEYS.termine, SEED_TERMINE);
   const season = loadSeason();
-  return v.map((t) => ({ ...t, saison: (t as any).saison ?? season }));
+  const arr = Array.isArray(v) ? v : [];
+  return arr.map((t) => ({ ...t, saison: (t as any).saison ?? season }));
 }
 export function saveTermine(v: Termin[]) {
-  saveJSON(KEYS.termine, v);
+  saveJSON(KEYS.termine, Array.isArray(v) ? v : []);
 }
 export function createTermin(partial: Omit<Termin, "id">) {
   const all = loadTermine();
@@ -177,45 +182,51 @@ export function createTermin(partial: Omit<Termin, "id">) {
 }
 
 export function loadPlayers(): Player[] {
-  return loadJSON<Player[]>(KEYS.players, []);
+  const v = loadJSON<Player[]>(KEYS.players, []);
+  return Array.isArray(v) ? v : [];
 }
 export function savePlayers(v: Player[]) {
-  saveJSON(KEYS.players, v);
+  saveJSON(KEYS.players, Array.isArray(v) ? v : []);
 }
 
 export function loadAttendance(): AttendanceStore {
-  return loadJSON<AttendanceStore>(KEYS.attendance, {});
+  const v = loadJSON<AttendanceStore>(KEYS.attendance, {});
+  return v && typeof v === "object" ? v : {};
 }
 export function saveAttendance(v: AttendanceStore) {
-  saveJSON(KEYS.attendance, v);
+  saveJSON(KEYS.attendance, v && typeof v === "object" ? v : {});
 }
 
 export function loadRatings(): RatingsStore {
-  return loadJSON<RatingsStore>(KEYS.ratings, {});
+  const v = loadJSON<RatingsStore>(KEYS.ratings, {});
+  return v && typeof v === "object" ? v : {};
 }
 export function saveRatings(v: RatingsStore) {
-  saveJSON(KEYS.ratings, v);
+  saveJSON(KEYS.ratings, v && typeof v === "object" ? v : {});
 }
 
 export function loadTests(): TestsStore {
-  return loadJSON<TestsStore>(KEYS.tests, {});
+  const v = loadJSON<TestsStore>(KEYS.tests, {});
+  return v && typeof v === "object" ? v : {};
 }
 export function saveTests(v: TestsStore) {
-  saveJSON(KEYS.tests, v);
+  saveJSON(KEYS.tests, v && typeof v === "object" ? v : {});
 }
 
 export function loadMatchStats(): MatchStatsStore {
-  return loadJSON<MatchStatsStore>(KEYS.matchStats, {});
+  const v = loadJSON<MatchStatsStore>(KEYS.matchStats, {});
+  return v && typeof v === "object" ? v : {};
 }
 export function saveMatchStats(v: MatchStatsStore) {
-  saveJSON(KEYS.matchStats, v);
+  saveJSON(KEYS.matchStats, v && typeof v === "object" ? v : {});
 }
 
 export function loadLineup(): LineupStore {
-  return loadJSON<LineupStore>(KEYS.lineup, {});
+  const v = loadJSON<LineupStore>(KEYS.lineup, {});
+  return v && typeof v === "object" ? v : {};
 }
 export function saveLineup(v: LineupStore) {
-  saveJSON(KEYS.lineup, v);
+  saveJSON(KEYS.lineup, v && typeof v === "object" ? v : {});
 }
 
 // ---------------- Test Matrix ----------------
@@ -245,19 +256,34 @@ export function deleteTerminCascade(terminId: string) {
   saveTermine(loadTermine().filter((t) => t.id !== terminId));
 
   const att = loadAttendance();
-  if (att[terminId]) { delete att[terminId]; saveAttendance(att); }
+  if (att[terminId]) {
+    delete att[terminId];
+    saveAttendance(att);
+  }
 
   const rat = loadRatings();
-  if (rat[terminId]) { delete rat[terminId]; saveRatings(rat); }
+  if (rat[terminId]) {
+    delete rat[terminId];
+    saveRatings(rat);
+  }
 
   const ms = loadMatchStats();
-  if (ms[terminId]) { delete ms[terminId]; saveMatchStats(ms); }
+  if (ms[terminId]) {
+    delete ms[terminId];
+    saveMatchStats(ms);
+  }
 
   const lu = loadLineup();
-  if (lu[terminId]) { delete lu[terminId]; saveLineup(lu); }
+  if (lu[terminId]) {
+    delete lu[terminId];
+    saveLineup(lu);
+  }
 
   const legacy = loadJSON<Record<string, any>>(KEYS.checkinLegacy, {});
-  if (legacy[terminId]) { delete legacy[terminId]; saveJSON(KEYS.checkinLegacy, legacy); }
+  if (legacy[terminId]) {
+    delete legacy[terminId];
+    saveJSON(KEYS.checkinLegacy, legacy);
+  }
 }
 
 export function cleanupOrphans(options?: { cleanMissingPlayers?: boolean }) {
@@ -274,13 +300,20 @@ export function cleanupOrphans(options?: { cleanMissingPlayers?: boolean }) {
     const obj = loadJSON<Record<string, any>>(key, {});
     let changed = false;
 
-    for (const terminId of Object.keys(obj)) {
-      if (!validTerminIds.has(terminId)) { delete obj[terminId]; changed = true; continue; }
+    for (const terminId of Object.keys(obj || {})) {
+      if (!validTerminIds.has(terminId)) {
+        delete obj[terminId];
+        changed = true;
+        continue;
+      }
       if (key === KEYS.lineup) continue;
 
       if (cleanMissingPlayers && obj[terminId] && typeof obj[terminId] === "object") {
         for (const playerId of Object.keys(obj[terminId])) {
-          if (!validPlayerIds.has(playerId)) { delete obj[terminId][playerId]; changed = true; }
+          if (!validPlayerIds.has(playerId)) {
+            delete obj[terminId][playerId];
+            changed = true;
+          }
         }
       }
     }
@@ -290,8 +323,11 @@ export function cleanupOrphans(options?: { cleanMissingPlayers?: boolean }) {
   if (cleanMissingPlayers) {
     const t = loadTests();
     let changed = false;
-    for (const playerId of Object.keys(t)) {
-      if (!validPlayerIds.has(playerId)) { delete t[playerId]; changed = true; }
+    for (const playerId of Object.keys(t || {})) {
+      if (!validPlayerIds.has(playerId)) {
+        delete (t as any)[playerId];
+        changed = true;
+      }
     }
     if (changed) saveTests(t);
   }
@@ -315,10 +351,11 @@ export function makeSnapshot(season: string): BackupSnapshot {
   };
 }
 export function loadBackups(): BackupSnapshot[] {
-  return loadJSON<BackupSnapshot[]>(KEYS.backups, []);
+  const v = loadJSON<BackupSnapshot[]>(KEYS.backups, []);
+  return Array.isArray(v) ? v : [];
 }
 export function saveBackups(v: BackupSnapshot[]) {
-  saveJSON(KEYS.backups, v);
+  saveJSON(KEYS.backups, Array.isArray(v) ? v : []);
 }
 export function autoBackupDaily() {
   const last = loadJSON<string | null>(KEYS.lastAutoBackup, null);
@@ -385,42 +422,27 @@ async function safeJson(r: Response) {
   try {
     return JSON.parse(txt);
   } catch {
-    // falls Google mal HTML liefert
     return { ok: false, error: "non_json", raw: txt.slice(0, 160) };
   }
 }
 
 async function remoteGet(): Promise<RemoteState> {
-  // cache busting
-  const url =
-    `${GOOGLE_SYNC_URL}?op=get&token=${encodeURIComponent(GOOGLE_SYNC_TOKEN)}&t=${Date.now()}`;
-
-  const r = await fetch(url, {
-    method: "GET",
-    cache: "no-store",
-    redirect: "follow",
-  });
-
+  const url = `${GOOGLE_SYNC_URL}?op=get&token=${encodeURIComponent(GOOGLE_SYNC_TOKEN)}&t=${Date.now()}`;
+  const r = await fetch(url, { method: "GET", cache: "no-store", redirect: "follow" });
   const j = (await safeJson(r)) as RemoteState;
   if (!j.ok && !j.error) (j as any).error = `http_${r.status}`;
   return j;
 }
 
 async function remoteSet(data: Record<string, any>, baseUpdatedAtISO: string | null): Promise<RemoteState> {
-  const url =
-    `${GOOGLE_SYNC_URL}?token=${encodeURIComponent(GOOGLE_SYNC_TOKEN)}&t=${Date.now()}`;
-
-  const payload = {
-    op: "set",
-    baseUpdatedAtISO: baseUpdatedAtISO || "",
-    data,
-  };
+  const url = `${GOOGLE_SYNC_URL}?token=${encodeURIComponent(GOOGLE_SYNC_TOKEN)}&t=${Date.now()}`;
+  const payload = { op: "set", baseUpdatedAtISO: baseUpdatedAtISO || "", data };
 
   const r = await fetch(url, {
     method: "POST",
     cache: "no-store",
     redirect: "follow",
-    headers: { "content-type": "text/plain;charset=utf-8" }, // wichtig für Apps Script
+    headers: { "content-type": "text/plain;charset=utf-8" },
     body: JSON.stringify(payload),
   });
 
@@ -435,25 +457,25 @@ function mergeByIdArray<T extends { id: string }>(remoteArr: T[] | null, localAr
   const l = Array.isArray(localArr) ? localArr : [];
   const map = new Map<string, T>();
   for (const x of r) map.set(x.id, x);
-  for (const x of l) map.set(x.id, x); // local gewinnt bei gleicher id
+  for (const x of l) map.set(x.id, x);
   return Array.from(map.values());
 }
 function mergeRecord(remoteObj: any, localObj: any) {
-  const r = (remoteObj && typeof remoteObj === "object") ? remoteObj : {};
-  const l = (localObj && typeof localObj === "object") ? localObj : {};
+  const r = remoteObj && typeof remoteObj === "object" ? remoteObj : {};
+  const l = localObj && typeof localObj === "object" ? localObj : {};
   return { ...r, ...l };
 }
 function mergeTwoLevel(remoteObj: any, localObj: any) {
   const out: any = {};
-  const r = (remoteObj && typeof remoteObj === "object") ? remoteObj : {};
-  const l = (localObj && typeof localObj === "object") ? localObj : {};
+  const r = remoteObj && typeof remoteObj === "object" ? remoteObj : {};
+  const l = localObj && typeof localObj === "object" ? localObj : {};
   const keys = new Set([...Object.keys(r), ...Object.keys(l)]);
   for (const k of keys) out[k] = mergeRecord(r[k], l[k]);
   return out;
 }
 function mergeTests(remoteObj: any, localObj: any) {
-  const r = (remoteObj && typeof remoteObj === "object") ? remoteObj : {};
-  const l = (localObj && typeof localObj === "object") ? localObj : {};
+  const r = remoteObj && typeof remoteObj === "object" ? remoteObj : {};
+  const l = localObj && typeof localObj === "object" ? localObj : {};
   const out: any = {};
   const pids = new Set([...Object.keys(r), ...Object.keys(l)]);
 
@@ -492,7 +514,7 @@ function mergeState(remote: Record<string, any>, local: Record<string, any>, dir
       out[k] = mergeTests(rv, lv);
       continue;
     }
-    out[k] = (lv !== undefined && lv !== null) ? lv : rv;
+    out[k] = lv !== undefined && lv !== null ? lv : rv;
   }
   return out;
 }
@@ -516,7 +538,6 @@ export async function syncPullOnce() {
     const isEmpty = !remoteData || Object.keys(remoteData).length === 0;
 
     if (isEmpty) {
-      // remote leer -> initial push lokaler Stand
       await syncPushNow(true);
       return;
     }
@@ -532,7 +553,9 @@ export async function syncPullOnce() {
 function scheduleSyncPush() {
   if (typeof window === "undefined") return;
   if (pushTimer) clearTimeout(pushTimer);
-  pushTimer = setTimeout(() => { syncPushNow(false).catch(() => null); }, 900);
+  pushTimer = setTimeout(() => {
+    syncPushNow(false).catch(() => null);
+  }, 900);
 }
 
 /** Push: local(dirty) -> remote, konflikt-sicher + merge + retry */
