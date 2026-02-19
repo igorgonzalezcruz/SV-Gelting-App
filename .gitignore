@@ -28,3 +28,10 @@ pnpm-debug.log*
 
 # OS
 .DS_Store
+**/node_modules/
+**/.next/
+**/out/
+.vercel/
+.turbo/
+
+
