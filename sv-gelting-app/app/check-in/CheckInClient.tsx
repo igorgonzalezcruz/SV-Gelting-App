@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { AttendanceStore, Player, Termin } from "../lib/store";
 import { loadAttendance, loadPlayers, loadTermine, saveAttendance } from "../lib/store";
@@ -24,7 +23,6 @@ export default function CheckInClient() {
 
   const [selectedTerminId, setSelectedTerminId] = useState<string>("");
 
-  // Load once
   useEffect(() => {
     const t = loadTermine();
     const p = loadPlayers();
@@ -34,7 +32,6 @@ export default function CheckInClient() {
     setPlayers(p);
     setAttStore(a);
 
-    // Termin aus URL bevorzugen, sonst erster Termin
     const initial =
       (terminFromUrl && t.find((x) => x.id === terminFromUrl)?.id) ||
       (t[0]?.id ?? "");
@@ -44,7 +41,6 @@ export default function CheckInClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist Attendance (robust)
   useEffect(() => {
     if (!loaded) return;
     saveAttendance(attStore);
@@ -65,33 +61,16 @@ export default function CheckInClient() {
 
     setAttStore((prev) => {
       const terminMap = { ...(prev[selectedTerminId] || {}) };
-      const nextVal = !Boolean(terminMap[playerId]);
-      terminMap[playerId] = nextVal;
-
-      return {
-        ...prev,
-        [selectedTerminId]: terminMap,
-      };
+      terminMap[playerId] = !Boolean(terminMap[playerId]);
+      return { ...prev, [selectedTerminId]: terminMap };
     });
   }
 
-  if (!loaded) {
-    return <main style={{ padding: 24 }}>Lade…</main>;
-  }
+  if (!loaded) return <main style={{ padding: 24 }}>Lade…</main>;
 
   return (
     <main style={{ padding: 24 }}>
       <h1>Check-in</h1>
-
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        <Link href="/dashboard">Dashboard</Link>
-        <Link href="/termine">Termine</Link>
-        <Link href="/bewertung">Bewertung</Link>
-        <Link href="/teams">Teams</Link>
-        <Link href="/stats">Stats</Link>
-        <Link href="/aufstellung">Aufstellung</Link>
-        <Link href="/export">Export</Link>
-      </div>
 
       {termine.length === 0 ? (
         <div style={{ border: "1px solid #ccc", padding: 12, borderRadius: 8 }}>
@@ -104,12 +83,11 @@ export default function CheckInClient() {
           <select
             value={selectedTerminId}
             onChange={(e) => setSelectedTerminId(e.target.value)}
-            style={{ padding: 10, borderRadius: 8, border: "1px solid #ccc", minWidth: 260 }}
+            style={{ padding: 10, borderRadius: 8, border: "1px solid #ccc", minWidth: 320 }}
           >
             {termine.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.title ? `${t.title} – ` : ""}
-                {formatDateDE(t.date)} {t.description ? `(${t.description})` : ""}
+                {t.typ} • {formatDateDE(t.datum)} {t.uhrzeit} • {t.titel}
               </option>
             ))}
           </select>
@@ -119,40 +97,45 @@ export default function CheckInClient() {
       {players.length === 0 ? (
         <div style={{ border: "1px solid #ccc", padding: 12, borderRadius: 8 }}>
           <b>Keine Spieler vorhanden.</b>
-          <div>Lege erst Spieler an (Teams/Spieler-Bereich).</div>
+          <div>Lege erst Spieler an.</div>
         </div>
       ) : (
         <>
           <h2 style={{ marginTop: 8 }}>
-            {selectedTermin ? `Termin: ${selectedTermin.title ?? formatDateDE(selectedTermin.date)}` : "—"}
+            {selectedTermin ? `Termin: ${selectedTermin.titel}` : "—"}
           </h2>
 
           <div style={{ display: "grid", gap: 10, maxWidth: 520 }}>
-            {players.map((p) => {
-              const checked = Boolean(currentMap[p.id]);
-              return (
-                <label
-                  key={p.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    border: "1px solid #ddd",
-                    padding: 10,
-                    borderRadius: 10,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => togglePlayer(p.id)}
-                    style={{ transform: "scale(1.2)" }}
-                  />
-                  <span style={{ flex: 1 }}>{p.name}</span>
-                  <span style={{ opacity: 0.7 }}>{checked ? "✅" : ""}</span>
-                </label>
-              );
-            })}
+            {players
+              .slice()
+              .sort((a, b) => a.team.localeCompare(b.team) || a.name.localeCompare(b.name))
+              .map((p) => {
+                const checked = Boolean(currentMap[p.id]);
+                return (
+                  <label
+                    key={p.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      border: "1px solid #ddd",
+                      padding: 10,
+                      borderRadius: 10,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => togglePlayer(p.id)}
+                      style={{ transform: "scale(1.2)" }}
+                    />
+                    <span style={{ flex: 1 }}>
+                      {p.team} • {p.number ? `#${p.number} ` : ""}{p.name}
+                    </span>
+                    <span style={{ opacity: 0.7 }}>{checked ? "✅" : ""}</span>
+                  </label>
+                );
+              })}
           </div>
 
           <div style={{ marginTop: 16, opacity: 0.8 }}>
